@@ -3,18 +3,18 @@
 This script was build to be used specifically for VOD, once the database process crashes generating a core file. It is intended to collect the core file and the dynamic libraries linked correctly in two compressed tar files. These tar files can be used later when debugging a core file in a machine where the core wasn't originated.
 
 
-This is an example showing how to use the pkgcore script for any core file. It MUST be called in the machine in the machine where the core file was generated.
+This is an example showing how to use the pkgcore script for any core file. It MUST be called in the machine where the core file was generated.
 
 Usage:
 
-    ./pkgrhelcore_2015_Jun_03.sh <case# or OutputFilename> <Corefile> <PID of process | Path to Executable>
+    ./pkgcore.sh <case# or OutputFilename> <Corefile> <PID of process | Path to Executable>
 
 Example:
 
-bash-4.1$ ./pkgrhelcore_2015_Jun_03.sh cleanbe_28283 core_cleanbe_28283.28283  `oscp -r`/bin/cleanbe
+bash-4.1$ ./pkgcore.sh cleanbe_28283 core_cleanbe_28283.28283  `oscp -r`/bin/cleanbe
 
-Packaging RHEL 5/6 Coredump for remote debugging.
-  pkgrhelcore.sh version 2015.06.03 11:00 PDT
+Packaging Linux Coredump for remote debugging.
+  pkgcore.sh version 2021.07.27 11:00 PDT
 ----------------------------------------------
 Third argument appears to be Executable = /work/aperrell/build/aperrell_VOD_8.0.2/rhel6.5_gpp44_64bit-dbg/versant_root/bin/cleanbe
 
@@ -31,7 +31,6 @@ Found executable file: /work/aperrell/build/aperrell_VOD_8.0.2/rhel6.5_gpp44_64b
 
 Using /usr/bin/gdb for complete list of Libraries
 Adding libthread_db.so.1 matching libpthread.so.0 to enable POSIX thread debugging
-/bin/cp: cannot stat `./pkgrhelcore_2015_Jun_03.sh': No such file or directory
 
 Packaging and Compressing Core File...
 -rw-r--r-- aperrell/ftp 168488712 2019-05-09 14:52 core_cleanbe_28283.28283
@@ -93,7 +92,7 @@ lrwxrwxrwx aperrell/ftp      0 2019-05-09 15:08 executable -> cleanbe
 
 Cleaning up
 
-Please Send the following two files to Versant Support (support@versant.com):
+Please upload the following two files to the Case Files for your support case:
 
 -rw-r--r-- 1 aperrell ftp 26015876 May  9 15:08 cleanbe_28283_corefiles.tar.gz
 

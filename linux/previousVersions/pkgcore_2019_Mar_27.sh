@@ -79,20 +79,36 @@
 # 2014.08.28: (Joe Sottile) Added copy of this script to the extras directory.
 # 2015.06.02: (Joe Sottile) For server (cleanbe/obe) crashes, get LOGFILE and systrace dump into extras 
 # 2015.06.03: (Joe Sottile) Also copy saved systrace and vbb binary files to extras for database crashes
+# 2019.01.23: (Joe Sottile) Use start directory; Add support for VOD 9 server (vserver) process; find OSCP;
+#                           find GDB; find GZIP; Use START with script origin if path does not begin with /;
+#                           Still not sure why customer has problems with ls -l or gzip -9; Change reporting message
+#                           at end to reference adding files to Actian Support Case.
+# 2019.01.29: (Joe Sottile) Added more explicit path to some files. Added whole gdb stack dump to info
+#                           Allow Linux 7 (kernel 3.10). Moved core-specific stuff from extras to info, per original
+#                           documented intent. Did a lot of explicit path additions for utilities.
+# 2019.03.27: (Joe Sottile): Fix issue with undefined ${cwd} and rework to use `pwd` for START. Fix some syntax issues
+#                            involving empty else blocks (comment only)
 #
 #####
 #
 
 # ADDED UPDATE DATE STRING!!!
-UPDATEDATE="2015.06.03 11:00 PDT"
+UPDATEDATE="2019.03.27 10:25 PST"
 
 # Show program header identifying current date
 /bin/echo "Packaging RHEL 5/6 Coredump for remote debugging."
 /bin/echo "  pkgrhelcore.sh version ${UPDATEDATE}"
 /bin/echo "----------------------------------------------"
 
+# Save starting point so we know where $0 is executed from in case we have cd'd
+START=`pwd`/
+if /usr/bin/test \( "${START}" = "//" \)
+    then
+		# Remove duplicate directory separator in case we are executed at root directory
+	    START=/
+	fi
 
-UNIQUEBASE=`/bin/date +"/tmp/%Y-%B-%e-%H-%M-%S-$$" | sed -e 's/ //g'`
+UNIQUEBASE=`/bin/date +"/tmp/%Y-%B-%e-%H-%M-%S-$$" | /bin/sed -e 's/ //g'`
 release=`/bin/uname -r`
 PATH=$PATH:/usr/bin
 
@@ -106,25 +122,30 @@ if /usr/bin/test  \( $# -ne 3 \)
 	exit 1;
 fi
 
-# Check OS major version only know how to work within version 2.6.9 and 2.6.16
-if /usr/bin/test  `/bin/echo $release | /bin/cut -d. -f1-2` \!= "2.6" 
+# Check OS major version only know how to work within version 2.6.9 and 2.6.16 (Linux 6)
+# Also allow 3.10 (Linux 7)
+if /usr/bin/test  \( `/bin/echo $release | /bin/cut -d. -f1-2` \!= "2.6" -a `/bin/echo $release | /bin/cut -d. -f1-2` \!= "3.10" \)
    then
-	/bin/echo "What version of Linux OS are you using?"
+	/bin/echo "Which version of Linux OS are you using (RHEL 6 and 7 supported)?"
 	/bin/uname -a
+	if /usr/bin/test -r /etc/redhat-release
+	then
+	    /bin/cat /etc/redhat-release
+	fi
 fi
 
 LINUXVERSION=`/bin/echo $release | /bin/cut -d. -f3 `
 
 	if /usr/bin/test \( $# -lt 3 \)
   	  then
-	/bin/echo "[PID] or Executable is required"
-	exit 1
+          /bin/echo "[PID] or Executable is required"
+	      exit 1
 	fi
 	# Test for type of Third Argument now to avoid duplicate testing later
 	if /usr/bin/kill -0 $3 2>/dev/null 
 	   then
-		/bin/echo "Third argument appears to be a PID = $3"
-		THIRDARG="PID"
+		    /bin/echo "Third argument appears to be a PID = $3"
+		    THIRDARG="PID"
 	   else
 		if /usr/bin/test \! -x $3
 		  then
@@ -154,11 +175,11 @@ LINUXVERSION=`/bin/echo $release | /bin/cut -d. -f3 `
 
 if /bin/echo $1 | /bin/grep "[/]" 2>&1 >/dev/null
   then
-	echo
-	echo "CASENUMBER contains characters which are not valid within a filename ... fixing"
-	echo "Changing \"$1\" "
-	CASENUMBER=`echo $1 | /bin/sed -e "s|/|-|g" `
-	echo "to \"$CASENUMBER\" "
+	/bin/echo
+	/bin/echo "CASENUMBER contains characters which are not valid within a filename ... fixing"
+	/bin/echo "Changing \"$1\" "
+	CASENUMBER=`/bin/echo $1 | /bin/sed -e "s|/|-|g" `
+	/bin/echo "to \"$CASENUMBER\" "
   else
 	CASENUMBER=$1
 fi
@@ -175,11 +196,11 @@ if /usr/bin/test \( -s "${CASENUMBER}_libraries.tar.gz" \) -o \
 fi
 
 # verify that corefile exists and is readable
-if /usr/bin/test `echo $2 | cut -c -1` = "/" 
+if /usr/bin/test `/bin/echo $2 | /bin/cut -c -1` = "/" 
   then
 	COREFILE=$2
   else
-	COREFILE=`pwd`/$2
+	COREFILE=${START}$2
 fi
 
 if /usr/bin/test \! \( -f $COREFILE  -a  -r $COREFILE \)
@@ -196,7 +217,7 @@ fi
 /bin/echo "Using corefile: $COREFILE "
 /bin/echo
 
-DATABASE=`/usr/bin/file $COREFILE | /bin/egrep -e "from 'cleanbe " -e "from 'obe " | /bin/awk -F\' ' { print $2 } ' | /bin/awk ' { print $NF } '`
+DATABASE=`/usr/bin/file $COREFILE | /bin/egrep -e "from 'cleanbe " -e "from 'obe " -e "from 'vserver " | /bin/awk -F\' ' { print $2 } ' | /bin/awk ' { print $NF } '`
 TIMEMARK=` /bin/ls -l --time-style=+%Y%m%dT%H%M%S $COREFILE | awk ' { print $6 } '`
 if /usr/bin/test \( -n "${DATABASE}" \)
     then
@@ -219,23 +240,35 @@ if /usr/bin/test \! \( -d "${UNIQUEBASE}" -a -w "${UNIQUEBASE}" \)
 	exit 1
 fi
 
-# Copy LOGFILE and dump systrace from database directory to extras
-if /usr/bin/test \( -n "{$DATABASE}" -a -d `oscp -d`/$DATABASE -a -x `oscp -d`/$DATABASE -a -r `oscp -d`/$DATABASE \)
+# 2019.01.23 Only attempt OSCP stuff if oscp is found
+# 0) set path to OSCP to blank
+OSCP=
+# 1) Try to find oscp in VERSANT_ROOT
+if /usr/bin/test \( -n "{$VERSANT_ROOT}" -a -d ${VERSANT_ROOT}/bin -a -x ${VERSANT_ROOT}/bin -a $x ${VERSANT_ROOT}/bin/oscp \)
     then
-        if /usr/bin/test \( -r `oscp -d`/$DATABASE/LOGFILE \)
+		OSCP=${VERSANT_ROOT}/bin/oscp
+	else
+# 2) Try to find oscp in path
+        OSCP=`/usr/bin/which oscp 2>/dev/null` #silently
+	fi
+
+# Copy LOGFILE and dump systrace from database directory to info
+if /usr/bin/test \( -n "${DATABASE}" -a -n "${OSCP}" -a -d `${OSCP} -d`/${DATABASE} -a -x `${OSCP} -d`/${DATABASE} -a -r `${OSCP} -d`/${DATABASE} \)
+    then
+        if /usr/bin/test \( -r `${OSCP} -d`/${DATABASE}/LOGFILE \)
         then
-            /bin/cp -pf `oscp -d`/$DATABASE/LOGFILE ${UNIQUEBASE}/extras
+            /bin/cp -pf `${OSCP} -d`/${DATABASE}/LOGFILE ${UNIQUEBASE}/info >/dev/null 2>&1
         fi
 	MACHINE=`uname -n`
-	if /usr/bin/test \( -r `oscp -d`/$DATABASE/${DATABASE}_${MACHINE}_*_${TIMEMARK}.vbb \)
+	if /usr/bin/test \( -r `${OSCP} -d`/${DATABASE}/${DATABASE}_${MACHINE}_*_${TIMEMARK}.vbb \)
 	then
-	    /bin/cp -pf `oscp -d`/$DATABASE/${DATABASE}_${MACHINE}_*_${TIMEMARK}.vbb ${UNIQUEBASE}/extras
+	    /bin/cp -pf `${OSCP} -d`/${DATABASE}/${DATABASE}_${MACHINE}_*_${TIMEMARK}.vbb ${UNIQUEBASE}/info >/dev/null 2>&1
 	fi
-	if /usr/bin/test \( -r `oscp -d`/$DATABASE/${DATABASE}_${MACHINE}_*_${TIMEMARK}.systrace \)
+	if /usr/bin/test \( -r `${OSCP} -d`/${DATABASE}/${DATABASE}_${MACHINE}_*_${TIMEMARK}.systrace \)
 	then
-	    /bin/cp -pf `oscp -d`/$DATABASE/${DATABASE}_${MACHINE}_*_${TIMEMARK}.systrace ${UNIQUEBASE}/extras
+	    /bin/cp -pf `${OSCP} -d`/${DATABASE}/${DATABASE}_${MACHINE}_*_${TIMEMARK}.systrace ${UNIQUEBASE}/info >/dev/null 2>&1
 	fi
-    `oscp -r`/bin/dbtool -trace -database $DATABASE -view >${UNIQUEBASE}/extras/systrace.out
+    `${OSCP} -r`/bin/dbtool -trace -database ${DATABASE} -view >${UNIQUEBASE}/info/systrace.out 2>/dev/null
 fi
 
 ##########################################
@@ -285,7 +318,7 @@ fi
 		   then
 			EXEFILE=$3
 		   else
-			EXEFILE=`pwd`/$3
+			EXEFILE=${START}$3
 		fi
 	fi
 
@@ -301,7 +334,7 @@ if /usr/bin/test \! -x "$EXEFILE"
 		/bin/echo "will search PATH then file systems looking for it...\n"
 		/bin/echo "If this is NOT the same system that generated the corefile Control-C now"
 		/bin/sleep 5
-		TARGET=`file ${COREFILE}  | cut -d\' -f2`
+		TARGET=`/usr/bin/file ${COREFILE}  | /bin/cut -d\' -f2`
 		/bin/echo "\n\nSearching for executable with name of \"$TARGET\"\n"
 		EXEFILE=`/usr/bin/which ${TARGET}`
 		if /bin/echo ${EXEFILE} | /bin/grep "^no ${TARGET}" 2>&1 >/dev/null
@@ -345,18 +378,34 @@ cd ${UNIQUEBASE}
 
 # Get the latest GDB from the path if they have one
 GDB=/usr/bin/gdb
-if /usr/bin/test `which gdb` \!= "$GDB"
+if /usr/bin/test \( -n "`/usr/bin/which gdb 2>/dev/null`" -a `/usr/bin/which gdb 2>/dev/null` \!= "$GDB" \)
     then
-        if /usr/bin/test -x `which gdb`
+        if /usr/bin/test -x `/usr/bin/which gdb 2>/dev/null`
             then
-                GDB=`which gdb`
+				# found gdb elsewhere and it is executable
+                GDB=`/usr/bin/which gdb`
+			else
+        		if /usr/bin/test -x `/usr/bin/which gdb 2>/dev/null`
+        		    then
+					    # Presume GDB at /usr/bin/gdb
+						GDB=/usr/bin/gdb
+					else
+					    GDB=
+        		    fi
+            fi
+	else
+        if /usr/bin/test -x `/usr/bin/which gdb 2>/dev/null`
+            then
+			    # Presume GDB at /usr/bin/gdb
+				GDB=/usr/bin/gdb
+			else
+			    GDB=
             fi
     fi
     
 # Verify that we have a GDB
-if /usr/bin/test -x $GDB
+if /usr/bin/test \( -n "${GDB}" -a -x $GDB \)
     then
-    
         # Use gdb to generate the complete list of libraries loaded into the corefile
         # RHEL now has gdb in /usr/bin/gdb
         /bin/echo "Using $GDB for complete list of Libraries"
@@ -388,31 +437,37 @@ if /usr/bin/test -x $GDB
                 | /bin/sed 's/[\(\*\)]//g' \
                 | /bin/sed 's/[ ]//g' \
                 | /bin/sort -u \
-                >> request.list
+                >> ${UNIQUEBASE}/request.list
+
+		# 2019.01.29: Also try to get a full stack dump, in case this somehow does not load properly
+        /bin/echo "Using $GDB for full stack dump of corefile"
+        /bin/echo "thread apply all where full" >cmdfile
+        /bin/echo "quit" >>cmdfile
+        $GDB -q -e $EXEFILE -c corefile -x cmdfile 2>&1 >> ${UNIQUEBASE}/info/stackdump
     fi
         
 # For gdb 7.0 or NO GDB, manually add libthread_db.so.1; gdb 7.6 gets it from parsed messages
-if /bin/grep libthread_db.so.1 request.list 2>&1 >/dev/null 
+if /bin/grep libthread_db.so.1 ${UNIQUEBASE}/request.list 2>&1 >/dev/null 
     then
         /bin/echo "POSIX thread debugging enabled"
     else
-        if /bin/grep libpthread.so.0 request.list 2>&1 >/dev/null
+        if /bin/grep libpthread.so.0 ${UNIQUEBASE}/request.list 2>&1 >/dev/null
             then
                 /bin/echo "Adding libthread_db.so.1 matching libpthread.so.0 to enable POSIX thread debugging"
-                /bin/grep libpthread.so.0 request.list | sed 's/pthread.so.0/thread_db.so.1/g' >>request.list
+                /bin/grep libpthread.so.0 request.list | sed 's/pthread.so.0/thread_db.so.1/g' >>${UNIQUEBASE}/request.list
             else
                 /bin/echo "No libpthread.so.0 or libthread_db.so.1 in library list."
                 /bin/echo "Adding system libpthread.so.0 and libthread_db.so.1 to enable POSIX thread debugging"
-                /bin/ls -1 /lib/libpthread.so.0 /lib/libthread_db.so.1 >>request.list
-                /bin/ls -1 /lib64/libpthread.so.0 /lib64/libthread_db.so.1 >>request.list
+                /bin/ls -1 /lib/libpthread.so.0 /lib/libthread_db.so.1 >>${UNIQUEBASE}/request.list
+                /bin/ls -1 /lib64/libpthread.so.0 /lib64/libthread_db.so.1 >>${UNIQUEBASE}/request.list
             fi
     fi
         
-/bin/mv -f request.list request.tmp
-/bin/sort -u request.tmp >request.list
-/bin/rm -f request.tmp cmdfile
+/bin/mv -f ${UNIQUEBASE}/request.list ${UNIQUEBASE}/request.tmp
+/bin/sort -u ${UNIQUEBASE}/request.tmp >${UNIQUEBASE}/request.list
+/bin/rm -f ${UNIQUEBASE}/request.tmp cmdfile
 
-/bin/mkdir libs ; cd libs
+/bin/mkdir ${UNIQUEBASE}/libs ; cd ${UNIQUEBASE}/libs
 
 # gather Application libraries and create dbxrc file
 # Command syntax has changed -- solib-absolute-prefix not solib-absolute-path
@@ -423,9 +478,9 @@ if /bin/grep libthread_db.so.1 request.list 2>&1 >/dev/null
 /bin/echo "set solib-absolute-prefix ./libs" >>${UNIQUEBASE}/.gdbinit
 /bin/echo "core-file corefile" >>${UNIQUEBASE}/.gdbinit
 
-for LIB in `cut -c 2- ${UNIQUEBASE}/request.list`
+for LIB in `/bin/cut -c 2- ${UNIQUEBASE}/request.list`
   do
-	( mkdir -p `/usr/bin/dirname $LIB` ; cd `/usr/bin/dirname $LIB` ; ln -s /$LIB `/bin/basename $LIB` )
+	( /bin/mkdir -p `/usr/bin/dirname $LIB` ; cd `/usr/bin/dirname $LIB` ; /bin/ln -s /$LIB `/bin/basename $LIB` )
   done
 
 # Create opencore script to launch gdb in quiet mode
@@ -441,7 +496,7 @@ chmod 755 ${UNIQUEBASE}/opencore
 
 /bin/date >> ${UNIQUEBASE}/error.log
 
-echo "attempting to get file info from corefile" >>  ${UNIQUEBASE}/error.log
+/bin/echo "attempting to get file info from corefile" >>  ${UNIQUEBASE}/error.log
 /usr/bin/file $COREFILE > ${UNIQUEBASE}/info/file.txt 2>>${UNIQUEBASE}/error.log
 
 #################################################
@@ -453,7 +508,13 @@ echo "attempting to get file info from corefile" >>  ${UNIQUEBASE}/error.log
 /bin/uname -a > ${UNIQUEBASE}/extras/uname.txt 2>${UNIQUEBASE}/extras/uname.errors
 
 # Copy self to extras
-/bin/cp -p $0 ${UNIQUEBASE}/extras
+	#prepend START if $0 does not begin with /
+	if /usr/bin/test `echo $0 | /bin/cut -b1 2>/dev/null` \!= "/"
+	    then
+	        /bin/cp -p ${START}$0 ${UNIQUEBASE}/extras >/dev/null 2>&1
+		else
+	        /bin/cp -p $0 ${UNIQUEBASE}/extras >/dev/null 2>&1
+		fi
 
 ############################################
 ####                                    ####
@@ -464,7 +525,7 @@ echo "attempting to get file info from corefile" >>  ${UNIQUEBASE}/error.log
 cd  ${UNIQUEBASE}
 
 # Create the two tar files which hold everything
-# using the 'h' option inorder to follow symbolic links 
+# using the 'h' option in order to follow symbolic links 
 
 # Grab the actual physical corefile 
 /bin/echo
@@ -481,11 +542,40 @@ tar rvvf $SAVEDIR/${CASENUMBER}_libraries.tar corefile executable
 
 cd $SAVEDIR
 
-if /usr/bin/test -x /usr/bin/gzip 
+#2019.01.23: Make sure we know where gzip is
+GZIP=/bin/gzip
+if /usr/bin/test \( -n "`/usr/bin/which gzip 2>/dev/null`" -a `/usr/bin/which gzip 2>/dev/null` \!= "$GZIP" \)
+    then
+        if /usr/bin/test -x `/usr/bin/which gzip 2>/dev/null`
+            then
+				# found gzip elsewhere and it is executable
+                GZIP=`/usr/bin/which gzip 2>/dev/null`
+			else
+        		if /usr/bin/test -x `/usr/bin/which gzip 2>/dev/null`
+        		    then
+					    # Presume GZIP at /bin/gzip
+						GZIP=/bin/gzip
+					else
+					    GZIP=
+        		    fi
+            fi
+	else
+        if /usr/bin/test -x `/usr/bin/which gzip 2>/dev/null`
+            then
+			    # Presume GZIP at /bin/gzip
+				GZIP=/bin/gzip
+			else
+			    GZIP=
+            fi
+    fi
+
+if /usr/bin/test \( -n "{$GZIP}" -a -x ${GZIP} \)
   then
-	/usr/bin/gzip -9 ${CASENUMBER}_libraries.tar
+    # Ignore compression errors
+	${GZIP} -9 ${CASENUMBER}_libraries.tar >/dev/null 2>&1
   else
-	/usr/bin/compress ${CASENUMBER}_libraries.tar
+    # Fall back on compress and hope that it is there. Ignore errors
+	/usr/bin/compress ${CASENUMBER}_libraries.tar >/dev/null 2>&1
 fi
 
 /bin/echo
@@ -494,6 +584,7 @@ fi
 /bin/rmdir  ${UNIQUEBASE}
 
 /bin/echo
-/bin/echo "Please Send the following two files to Versant Support (support@versant.com):"
-/bin/ls -l ${CASENUMBER}_*
+/bin/echo "Please Send attach the following two files to your Actian Support Case:"
+/bin/ls -l ${CASENUMBER}_* 2>/dev/null
+
 
