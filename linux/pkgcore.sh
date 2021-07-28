@@ -126,7 +126,8 @@ fi
 
 # Check OS major version only know how to work within version 2.6.9 and 2.6.16 (Linux 6)
 # Also allow 3.10 (Linux 7)
-if /usr/bin/test  \( `/bin/echo $release | /bin/cut -d. -f1-2` \!= "2.6" -a `/bin/echo $release | /bin/cut -d. -f1-2` \!= "3.10" \)
+# Also allow 4.18 (Linux 8)
+if /usr/bin/test  \( `/bin/echo $release | /bin/cut -d. -f1-2` \!= "2.6" -a `/bin/echo $release | /bin/cut -d. -f1-2` \!= "3.10" -a `/bin/echo $release | /bin/cut -d. -f1-2` \!= "4.18"\)
    then
 	/bin/echo "Which version of Linux OS are you using (RHEL 6 and 7 supported)?"
 	/bin/uname -a
@@ -246,7 +247,7 @@ fi
 # 0) set path to OSCP to blank
 OSCP=
 # 1) Try to find oscp in VERSANT_ROOT
-if /usr/bin/test \( -n "{$VERSANT_ROOT}" -a -d ${VERSANT_ROOT}/bin -a -x ${VERSANT_ROOT}/bin -a $x ${VERSANT_ROOT}/bin/oscp \)
+if /usr/bin/test \( -n "{$VERSANT_ROOT}" -a -d ${VERSANT_ROOT}/bin -a -x ${VERSANT_ROOT}/bin -a -x ${VERSANT_ROOT}/bin/oscp \)
     then
 		OSCP=${VERSANT_ROOT}/bin/oscp
 	else
